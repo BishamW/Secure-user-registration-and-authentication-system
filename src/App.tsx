@@ -39,11 +39,13 @@ interface UserProfile {
   passwordChangedAt: string;
   lastPinVerifiedAt: string;
   pinHash: string;
+  failedLoginAttempts: number;
+  lockoutUntil: string | null;
 }
 
 interface SecurityLog {
   id?: string;
-  type: 'login' | 'failed_login' | 'password_change' | '2fa_success' | '2fa_failure' | 'signup';
+  type: 'login' | 'failed_login' | 'password_change' | '2fa_success' | '2fa_failure' | 'signup' | 'lockout';
   details: string;
   status: 'success' | 'failure';
   timestamp: string;
@@ -595,7 +597,9 @@ export default function App() {
         isVerified: false,
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
-        pinHash
+        pinHash,
+        failedLoginAttempts: 0,
+        lockoutUntil: null
       };
 
       await setDoc(doc(db, 'users', newUser.uid), newProfile);
@@ -624,12 +628,46 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // 1. Check Lockout Status
+      const lockoutResponse = await fetch('/api/auth/lockout-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const lockoutData = await lockoutResponse.json();
+      
+      if (lockoutData.locked) {
+        setError(`Account locked. Please try again in ${lockoutData.remainingMinutes} minutes.`);
+        return;
+      }
+
+      // 2. Attempt Login
       const { user: loggedInUser } = await signInWithEmailAndPassword(auth, email, password);
+      
+      // 3. Reset Lockout on Success
+      await fetch('/api/auth/lockout-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, success: true })
+      });
+
       await logSecurityEvent(loggedInUser.uid, 'login', 'User logged in with email/password', 'success');
     } catch (err: any) {
       if (isAbortError(err)) return;
-      // We don't have a UID here if login fails, but we can log it if we find the user by email later
-      // For now, just show error
+      
+      // 4. Update Lockout on Failure
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        try {
+          await fetch('/api/auth/lockout-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, success: false })
+          });
+        } catch (logErr) {
+          console.error("Could not update lockout status:", logErr);
+        }
+      }
+
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -677,7 +715,9 @@ export default function App() {
         isVerified: true, // Google users are pre-verified
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
-        pinHash
+        pinHash,
+        failedLoginAttempts: 0,
+        lockoutUntil: null
       };
 
       await setDoc(doc(db, 'users', user.uid), newProfile);

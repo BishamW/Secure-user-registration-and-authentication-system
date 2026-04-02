@@ -6,11 +6,23 @@ import nodemailer from "nodemailer";
 import twilio from "twilio";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
+import admin from "firebase-admin";
+import fs from "fs";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Initialize Firebase Admin
+const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+
+admin.initializeApp({
+  projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId,
+});
+
+const db = admin.firestore(process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
@@ -98,6 +110,99 @@ async function startServer() {
     } catch (error) {
       console.error("Twilio error:", error);
       res.status(500).json({ error: "Failed to send SMS" });
+    }
+  });
+
+  // --- Lockout Management ---
+
+  // Check if account is locked
+  app.post("/api/auth/lockout-check", async (req, res) => {
+    const { email } = req.body;
+    try {
+      const usersRef = db.collection("users");
+      const snapshot = await usersRef.where("email", "==", email).limit(1).get();
+      
+      if (snapshot.empty) {
+        return res.json({ locked: false });
+      }
+
+      const user = snapshot.docs[0].data();
+      if (user.lockoutUntil) {
+        const lockoutTime = new Date(user.lockoutUntil).getTime();
+        const now = new Date().getTime();
+        if (now < lockoutTime) {
+          const remainingMinutes = Math.ceil((lockoutTime - now) / (60 * 1000));
+          return res.json({ locked: true, remainingMinutes });
+        }
+      }
+      
+      res.json({ locked: false });
+    } catch (error) {
+      console.error("Lockout check error:", error);
+      res.status(500).json({ error: "Failed to check lockout status" });
+    }
+  });
+
+  // Update failed attempts or reset on success
+  app.post("/api/auth/lockout-update", async (req, res) => {
+    const { email, success } = req.body;
+    try {
+      const usersRef = db.collection("users");
+      const snapshot = await usersRef.where("email", "==", email).limit(1).get();
+      
+      if (snapshot.empty) {
+        return res.json({ success: true });
+      }
+
+      const userDoc = snapshot.docs[0];
+      const user = userDoc.data();
+
+      if (success) {
+        await userDoc.ref.update({
+          failedLoginAttempts: 0,
+          lockoutUntil: null
+        });
+      } else {
+        const newAttempts = (user.failedLoginAttempts || 0) + 1;
+        const updates: any = { failedLoginAttempts: newAttempts };
+        
+        if (newAttempts >= 5) {
+          const lockoutTime = new Date(new Date().getTime() + 15 * 60 * 1000).toISOString();
+          updates.lockoutUntil = lockoutTime;
+          
+          // Send Lockout Email
+          try {
+            await transporter.sendMail({
+              from: `"SecureGuard Security" <${process.env.SMTP_USER}>`,
+              to: email,
+              subject: "Your account has been locked",
+              text: `Your account has been locked for 15 minutes due to 5 failed login attempts.`,
+              html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <h2 style="color: #e11d48;">Account Locked</h2>
+                <p>Your SecureGuard account has been locked for <strong>15 minutes</strong> due to 5 consecutive failed login attempts.</p>
+                <p>If this wasn't you, please consider changing your password once the lockout expires.</p>
+              </div>`,
+            });
+          } catch (emailErr) {
+            console.error("Failed to send lockout email:", emailErr);
+          }
+          
+          // Log lockout event
+          await userDoc.ref.collection("securityLogs").add({
+            type: "lockout",
+            details: "Account locked for 15 minutes due to 5 failed attempts",
+            status: "failure",
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        await userDoc.ref.update(updates);
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Lockout update error:", error);
+      res.status(500).json({ error: "Failed to update lockout status" });
     }
   });
 

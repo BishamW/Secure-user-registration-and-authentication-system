@@ -13,9 +13,11 @@
         "isVerified": { "type": "boolean" },
         "passwordChangedAt": { "type": "string", "format": "date-time" },
         "lastPinVerifiedAt": { "type": "string", "format": "date-time" },
-        "pinHash": { "type": "string" }
+        "pinHash": { "type": "string" },
+        "failedLoginAttempts": { "type": "integer" },
+        "lockoutUntil": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "fullName", "email", "isVerified"]
+      "required": ["uid", "fullName", "email", "isVerified", "failedLoginAttempts"]
     },
     "PasswordHistory": {
       "title": "Password History",
