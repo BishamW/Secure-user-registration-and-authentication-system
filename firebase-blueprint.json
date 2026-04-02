@@ -13,9 +13,11 @@
         "isVerified": { "type": "boolean" },
         "passwordChangedAt": { "type": "string", "format": "date-time" },
         "lastPinVerifiedAt": { "type": "string", "format": "date-time" },
-        "pinHash": { "type": "string" }
+        "pinHash": { "type": "string" },
+        "failedLoginAttempts": { "type": "integer" },
+        "lockoutUntil": { "type": "string", "format": "date-time" }
       },
-      "required": ["uid", "fullName", "email", "isVerified"]
+      "required": ["uid", "fullName", "email", "isVerified", "failedLoginAttempts"]
     },
     "PasswordHistory": {
       "title": "Password History",
@@ -27,6 +29,19 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "passwordHash", "createdAt"]
+    },
+    "SecurityLog": {
+      "title": "Security Log",
+      "description": "Audit log of security-related events.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["login", "failed_login", "password_change", "2fa_success", "2fa_failure", "signup"] },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["success", "failure"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "details", "status", "timestamp"]
+    }
     }
   },
   "firestore": {
@@ -37,6 +52,11 @@
     "/users/{userId}/passwordHistory/{historyId}": {
       "schema": "PasswordHistory",
       "description": "User's password history."
+    },
+    "/users/{userId}/securityLogs/{logId}": {
+      "schema": "SecurityLog",
+      "description": "User's security audit logs."
+    }
     }
   }
 }

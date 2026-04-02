@@ -24,9 +24,17 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
+<<<<<<< HEAD
 import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+=======
+import firebaseConfig from '../firebase-applet-config.json';
+import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock, Volume2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from './lib/utils';
+import { GoogleGenAI } from "@google/genai";
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 
 // --- Types ---
 interface UserProfile {
@@ -39,6 +47,20 @@ interface UserProfile {
   passwordChangedAt: string;
   lastPinVerifiedAt: string;
   pinHash: string;
+<<<<<<< HEAD
+=======
+  failedLoginAttempts: number;
+  lockoutUntil: string | null;
+}
+
+interface SecurityLog {
+  id?: string;
+  type: 'login' | 'failed_login' | 'password_change' | '2fa_success' | '2fa_failure' | 'signup' | 'lockout';
+  details: string;
+  status: 'success' | 'failure';
+  timestamp: string;
+  ip?: string; // Optional for simulation
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 }
 
 // --- Helper Functions ---
@@ -77,12 +99,47 @@ const PasswordStrengthIndicator = ({ password }: { password: string }) => {
   );
 };
 
+<<<<<<< HEAD
+=======
+const isAbortError = (err: any) => {
+  if (!err) return false;
+  const message = (err.message || String(err)).toLowerCase();
+  const name = (err.name || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    message.includes('aborted') ||
+    message.includes('failed to fetch') ||
+    message.includes('signal is aborted') ||
+    message.includes('network error') ||
+    message.includes('request was cancelled') ||
+    name === 'aborterror' ||
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request'
+  );
+};
+
+const logSecurityEvent = async (uid: string, type: SecurityLog['type'], details: string, status: SecurityLog['status']) => {
+  try {
+    await addDoc(collection(db, `users/${uid}/securityLogs`), {
+      type,
+      details,
+      status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    if (isAbortError(err)) return;
+    console.error("Failed to log security event:", err);
+  }
+};
+
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 // --- Components ---
 
 const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
+<<<<<<< HEAD
   const recognitionRef = useRef<any>(null);
   const targetPhrase = "Hi this is to verify that I am not a robot";
 
@@ -165,6 +222,122 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
   const stopRecording = () => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+=======
+  const [isProcessing, setIsProcessing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const targetPhrase = "Hi this is to verify that I am not a robot";
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setError('');
+      setTranscript('');
+
+      // Auto-stop after 5 seconds
+      setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+        }
+      }, 5000);
+    } catch (err) {
+      if (isAbortError(err)) return;
+      setError("Microphone access denied or not available.");
+      console.error(err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processAudio = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    setError('');
+    
+    try {
+      // 1. Convert Blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      // 2. Call Gemini for STT (Frontend call as per guidelines)
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const model = "gemini-3-flash-preview";
+      
+      const result = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: audioBlob.type || "audio/webm",
+                data: base64Audio,
+              },
+            },
+            {
+              text: `Transcribe the audio exactly. If the user said something close to "${targetPhrase}", just return that exact phrase. Otherwise, return the actual transcription.`,
+            },
+          ],
+        },
+      });
+
+      const text = result.text?.trim() || '';
+      setTranscript(text);
+
+      // 3. Send to Backend for Verification & Logging
+      const response = await fetch('/api/auth/verify-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          transcript: text, 
+          targetPhrase,
+          audioData: base64Audio // Optional: for backend audit
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.verified) {
+        onVerified();
+      } else {
+        setError(data.message || "Voice verification failed. Please try again.");
+      }
+    } catch (err: any) {
+      if (isAbortError(err)) return;
+      setError("Verification failed: " + (err.message || "Unknown error"));
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     }
   };
 
@@ -172,10 +345,19 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
     <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-slate-700">Voice Captcha</p>
+<<<<<<< HEAD
         {isRecording && (
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
             <span className="text-[10px] uppercase tracking-wider font-bold text-red-500">Live</span>
+=======
+        {(isRecording || isProcessing) && (
+          <div className="flex items-center gap-1.5">
+            <span className={cn("w-2 h-2 rounded-full", isRecording ? "bg-red-500 animate-ping" : "bg-blue-500 animate-pulse")} />
+            <span className={cn("text-[10px] uppercase tracking-wider font-bold", isRecording ? "text-red-500" : "text-blue-500")}>
+              {isRecording ? "Live" : "Processing"}
+            </span>
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
           </div>
         )}
       </div>
@@ -185,15 +367,30 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         <button
           type="button"
           onClick={isRecording ? stopRecording : startRecording}
+<<<<<<< HEAD
           className={cn(
             "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm",
+=======
+          disabled={isProcessing}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50",
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             isRecording 
               ? "bg-red-100 text-red-600 hover:bg-red-200" 
               : "bg-blue-600 text-white hover:bg-blue-700"
           )}
         >
+<<<<<<< HEAD
           <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
           {isRecording ? "Stop Recording" : "Start Voice Verification"}
+=======
+          {isProcessing ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
+          )}
+          {isProcessing ? "Verifying..." : isRecording ? "Stop Recording" : "Start Voice Verification"}
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         </button>
       </div>
       {transcript && (
@@ -239,9 +436,16 @@ const TwoFactorAuth = ({ onVerified, profile, needsPin }: { onVerified: () => vo
           onVerified();
         } else {
           setError("Invalid PIN. Please try again.");
+<<<<<<< HEAD
         }
       } catch (err: any) {
         if (err.message?.includes('aborted')) return;
+=======
+          logSecurityEvent(profile.uid, '2fa_failure', 'User entered incorrect PIN during 2FA', 'failure');
+        }
+      } catch (err: any) {
+        if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         setError("Verification failed. Please try again.");
       }
     } else {
@@ -312,8 +516,14 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
       setError("Passwords do not match.");
       return;
     }
+<<<<<<< HEAD
     if (newPassword.length < 8) {
       setError("Password must be at least 8 characters.");
+=======
+    const strength = getPasswordStrength(newPassword);
+    if (strength.score < 4) {
+      setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       return;
     }
 
@@ -377,9 +587,17 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
         passwordChangedAt: new Date().toISOString()
       });
 
+<<<<<<< HEAD
       onUpdated();
     } catch (err: any) {
       if (err.message?.includes('aborted')) return;
+=======
+      await logSecurityEvent(user.uid, 'password_change', 'User updated password', 'success');
+
+      onUpdated();
+    } catch (err: any) {
+      if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       setError(err.message);
     }
   };
@@ -453,6 +671,10 @@ export default function App() {
   const [isForcedRotation, setIsForcedRotation] = useState(false);
   const [needsExpirationAlert, setNeedsExpirationAlert] = useState(false);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+<<<<<<< HEAD
+=======
+  const [isFormVoiceVerified, setIsFormVoiceVerified] = useState(false);
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 
   // Form States
   const [email, setEmail] = useState('');
@@ -467,6 +689,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
+<<<<<<< HEAD
         const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (profileDoc.exists()) {
           const data = profileDoc.data() as UserProfile;
@@ -482,6 +705,28 @@ export default function App() {
           setNeedsProfileSetup(false);
         } else {
           setNeedsProfileSetup(true);
+=======
+        try {
+          const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (profileDoc.exists()) {
+            const data = profileDoc.data() as UserProfile;
+            setProfile(data);
+            checkSecurityLayers(data);
+            
+            // Check if 2FA done in this session
+            const is2FADone = sessionStorage.getItem(`2fa_done_${firebaseUser.uid}`);
+            if (!is2FADone) {
+              setNeeds2FA(true);
+            }
+            
+            setNeedsProfileSetup(false);
+          } else {
+            setNeedsProfileSetup(true);
+          }
+        } catch (err) {
+          if (isAbortError(err)) return;
+          console.error("Failed to fetch user profile:", err);
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         }
       } else {
         setProfile(null);
@@ -519,6 +764,14 @@ export default function App() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+<<<<<<< HEAD
+=======
+    const strength = getPasswordStrength(password);
+    if (strength.score < 4) {
+      setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
+      return;
+    }
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     if (pin.length !== 6) {
       setError("PIN must be 6 digits.");
       return;
@@ -552,11 +805,22 @@ export default function App() {
         isVerified: false,
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
+<<<<<<< HEAD
         pinHash
+=======
+        pinHash,
+        failedLoginAttempts: 0,
+        lockoutUntil: null
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       };
 
       await setDoc(doc(db, 'users', newUser.uid), newProfile);
       
+<<<<<<< HEAD
+=======
+      await logSecurityEvent(newUser.uid, 'signup', 'User created account', 'success');
+      
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       // Save initial password to history
       await addDoc(collection(db, `users/${newUser.uid}/passwordHistory`), {
         uid: newUser.uid,
@@ -567,7 +831,11 @@ export default function App() {
       setProfile(newProfile);
       setError("Verification email sent! Please verify to access dashboard.");
     } catch (err: any) {
+<<<<<<< HEAD
       if (err.message?.includes('aborted')) return;
+=======
+      if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -579,11 +847,55 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+<<<<<<< HEAD
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
       if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
         return; // Ignore user-initiated aborts
       }
+=======
+      // 1. Check Lockout Status
+      const lockoutResponse = await fetch('/api/auth/lockout-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const lockoutData = await lockoutResponse.json();
+      
+      if (lockoutData.locked) {
+        setError(`Account locked. Please try again in ${lockoutData.remainingMinutes} minutes.`);
+        return;
+      }
+
+      // 2. Attempt Login
+      const { user: loggedInUser } = await signInWithEmailAndPassword(auth, email, password);
+      
+      // 3. Reset Lockout on Success
+      await fetch('/api/auth/lockout-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, success: true })
+      });
+
+      await logSecurityEvent(loggedInUser.uid, 'login', 'User logged in with email/password', 'success');
+    } catch (err: any) {
+      if (isAbortError(err)) return;
+      
+      // 4. Update Lockout on Failure
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        try {
+          await fetch('/api/auth/lockout-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, success: false })
+          });
+        } catch (logErr) {
+          if (isAbortError(logErr)) return;
+          console.error("Could not update lockout status:", logErr);
+        }
+      }
+
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -594,11 +906,18 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     try {
+<<<<<<< HEAD
       await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
         return; // Ignore user-initiated aborts
       }
+=======
+      const { user: googleUser } = await signInWithPopup(auth, googleProvider);
+      await logSecurityEvent(googleUser.uid, 'login', 'User logged in with Google', 'success');
+    } catch (err: any) {
+      if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -632,14 +951,24 @@ export default function App() {
         isVerified: true, // Google users are pre-verified
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
+<<<<<<< HEAD
         pinHash
+=======
+        pinHash,
+        failedLoginAttempts: 0,
+        lockoutUntil: null
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       };
 
       await setDoc(doc(db, 'users', user.uid), newProfile);
       setProfile(newProfile);
       setNeedsProfileSetup(false);
     } catch (err: any) {
+<<<<<<< HEAD
       if (err.message?.includes('aborted')) return;
+=======
+      if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -656,7 +985,11 @@ export default function App() {
       });
       setNeedsPin(false);
     } catch (err: any) {
+<<<<<<< HEAD
       if (err.message?.includes('aborted')) return;
+=======
+      if (isAbortError(err)) return;
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       console.error("Failed to update PIN verification time:", err);
     }
   };
@@ -664,6 +997,10 @@ export default function App() {
   const handle2FAComplete = () => {
     if (user) {
       sessionStorage.setItem(`2fa_done_${user.uid}`, 'true');
+<<<<<<< HEAD
+=======
+      logSecurityEvent(user.uid, '2fa_success', 'User completed 2FA verification', 'success');
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     }
     setNeeds2FA(false);
     if (needsPin) handlePinVerified();
@@ -687,13 +1024,27 @@ export default function App() {
 
           <div className="flex bg-slate-100 p-1 rounded-lg">
             <button 
+<<<<<<< HEAD
               onClick={() => setIsSignUp(false)}
+=======
+              onClick={() => {
+                setIsSignUp(false);
+                setIsFormVoiceVerified(false);
+              }}
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", !isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Login
             </button>
             <button 
+<<<<<<< HEAD
               onClick={() => setIsSignUp(true)}
+=======
+              onClick={() => {
+                setIsSignUp(true);
+                setIsFormVoiceVerified(false);
+              }}
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Sign Up
@@ -745,12 +1096,57 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
+<<<<<<< HEAD
             {isSignUp && <PasswordStrengthIndicator password={password} />}
             
             {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
             <button 
               type="submit"
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+=======
+            {isSignUp && (
+              <>
+                <PasswordStrengthIndicator password={password} />
+                <div className="relative">
+                  <Key className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+                  <input 
+                    type="password" placeholder="Set 6-digit Security PIN" required maxLength={6}
+                    value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </>
+            )}
+            
+            <div className="pt-2">
+              <VoiceCaptcha onVerified={() => setIsFormVoiceVerified(true)} />
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  <p className="text-xs font-bold">Action Required</p>
+                </div>
+                <p className="text-xs text-red-500 leading-relaxed">{error}</p>
+                {error.includes("Sign-in providers are not enabled") && (
+                  <div className="pt-2 border-t border-red-100 mt-2 space-y-1">
+                    <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider">How to Fix:</p>
+                    <ol className="text-[10px] text-red-500 list-decimal pl-4 space-y-1 text-left">
+                      <li>Go to <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`} target="_blank" className="underline font-bold">Firebase Console</a></li>
+                      <li>Click <b>"Add new provider"</b></li>
+                      <li>Enable <b>"Email/Password"</b> and <b>"Google"</b></li>
+                      <li>Save and refresh this page</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
+            <button 
+              type="submit"
+              disabled={!isFormVoiceVerified}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             >
               {isSignUp ? "Create Account" : "Sign In"}
             </button>
@@ -803,10 +1199,23 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
+<<<<<<< HEAD
             {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
             <button 
               type="submit"
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+=======
+            
+            <div className="pt-2">
+              <VoiceCaptcha onVerified={() => setIsFormVoiceVerified(true)} />
+            </div>
+
+            {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
+            <button 
+              type="submit"
+              disabled={!isFormVoiceVerified}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             >
               Complete Setup
             </button>
@@ -1144,6 +1553,87 @@ const SecurityQuiz = () => {
   );
 };
 
+<<<<<<< HEAD
+=======
+const SecurityAuditLog = ({ uid }: { uid: string }) => {
+  const [logs, setLogs] = useState<SecurityLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const q = query(
+          collection(db, `users/${uid}/securityLogs`),
+          orderBy('timestamp', 'desc'),
+          limit(10)
+        );
+        const snapshot = await getDocs(q);
+        const logData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SecurityLog));
+        setLogs(logData);
+      } catch (err) {
+        if (isAbortError(err)) return;
+        console.error("Failed to fetch security logs:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, [uid]);
+
+  const getIcon = (type: SecurityLog['type']) => {
+    switch (type) {
+      case 'login': return <LogOut className="w-4 h-4 text-green-500 rotate-180" />;
+      case 'failed_login': return <AlertTriangle className="w-4 h-4 text-red-500" />;
+      case 'password_change': return <RefreshCw className="w-4 h-4 text-blue-500" />;
+      case '2fa_success': return <Shield className="w-4 h-4 text-green-500" />;
+      case '2fa_failure': return <Shield className="w-4 h-4 text-red-500" />;
+      case 'signup': return <UserIcon className="w-4 h-4 text-purple-500" />;
+      default: return <Activity className="w-4 h-4 text-slate-500" />;
+    }
+  };
+
+  return (
+    <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+        <Activity className="w-5 h-5 text-blue-600" />
+        Security Audit Log
+      </h3>
+      {loading ? (
+        <div className="text-center py-4 text-slate-400 text-sm italic">Loading logs...</div>
+      ) : logs.length === 0 ? (
+        <div className="text-center py-4 text-slate-400 text-sm italic">No security events recorded yet.</div>
+      ) : (
+        <div className="space-y-3">
+          {logs.map((log) => (
+            <div key={log.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
+                  {getIcon(log.type)}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900 capitalize">{log.type.replace('_', ' ')}</p>
+                  <p className="text-xs text-slate-500">{log.details}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-mono text-slate-400">{new Date(log.timestamp).toLocaleString()}</p>
+                <span className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                  log.status === 'success' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                )}>
+                  {log.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+};
+
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 // --- Dashboard ---
 
 const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAlert }: { 
@@ -1221,6 +1711,12 @@ const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAl
             {/* Awareness Quiz */}
             <SecurityQuiz />
 
+<<<<<<< HEAD
+=======
+            {/* Audit Log */}
+            {profile && <SecurityAuditLog uid={profile.uid} />}
+
+>>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             {/* Daily Tips */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
