@@ -207,6 +207,33 @@ async function startServer() {
     }
   });
 
+  // Verify Voice Captcha
+  app.post("/api/auth/verify-voice", async (req, res) => {
+    const { transcript, targetPhrase } = req.body;
+    try {
+      // Robust verification: check if the transcript contains key words from the target phrase
+      // This reduces false positives from minor transcription errors
+      const normalizedTranscript = transcript.toLowerCase();
+      
+      // Check for key words: "verify", "not", "robot"
+      const hasKeyWords = normalizedTranscript.includes("verify") && 
+                          normalizedTranscript.includes("not") && 
+                          normalizedTranscript.includes("robot");
+      
+      if (hasKeyWords) {
+        res.json({ verified: true });
+      } else {
+        res.json({ 
+          verified: false, 
+          message: `Transcription did not match the required phrase. We heard: "${transcript}"` 
+        });
+      }
+    } catch (error) {
+      console.error("Voice verification error:", error);
+      res.status(500).json({ error: "Failed to verify voice captcha" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

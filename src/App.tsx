@@ -24,9 +24,10 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
-import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock } from 'lucide-react';
+import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock, Volume2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
+import { GoogleGenAI } from "@google/genai";
 
 // --- Types ---
 interface UserProfile {
@@ -119,88 +120,118 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
-  const recognitionRef = useRef<any>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const targetPhrase = "Hi this is to verify that I am not a robot";
 
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-    };
-  }, []);
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-  const startRecording = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError("Speech recognition not supported in this browser.");
-      return;
-    }
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
 
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = 'en-US';
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        await processAudio(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+      };
 
-    recognition.onstart = () => {
+      mediaRecorder.start();
       setIsRecording(true);
       setError('');
       setTranscript('');
-      
-      // Auto-stop after 10 seconds
+
+      // Auto-stop after 5 seconds
       setTimeout(() => {
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
         }
-      }, 10000);
-    };
-    
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
-
-    recognition.onerror = (event: any) => {
-      if (event.error === 'aborted') {
-        setIsRecording(false);
-        return; // Ignore intentional aborts
-      }
-      if (event.error === 'no-speech') {
-        setError("No speech detected. Please try again.");
-      } else if (event.error === 'audio-capture') {
-        setError("Microphone not found or access denied.");
-      } else if (event.error === 'not-allowed') {
-        setError("Microphone permission denied.");
-      } else {
-        setError("Error: " + event.error);
-      }
-      setIsRecording(false);
-    };
-    
-    recognition.onresult = (event: any) => {
-      const result = event.results[0][0].transcript.toLowerCase();
-      const confidence = event.results[0][0].confidence;
-      const isFinal = event.results[0].isFinal;
-      
-      setTranscript(result);
-      
-      if (isFinal) {
-        if (result.includes("verify") && result.includes("not") && result.includes("robot")) {
-          onVerified();
-        } else if (confidence < 0.5) {
-          setError("Speech not clear enough. Please try again.");
-        } else {
-          setError(`Transcription: "${result}". Please say the phrase exactly.`);
-        }
-      }
-    };
-
-    recognition.start();
+      }, 5000);
+    } catch (err) {
+      setError("Microphone access denied or not available.");
+      console.error(err);
+    }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const processAudio = async (audioBlob: Blob) => {
+    setIsProcessing(true);
+    setError('');
+    
+    try {
+      // 1. Convert Blob to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+      });
+      reader.readAsDataURL(audioBlob);
+      const base64Audio = await base64Promise;
+
+      // 2. Call Gemini for STT (Frontend call as per guidelines)
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const model = "gemini-3-flash-preview";
+      
+      const result = await ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: audioBlob.type || "audio/webm",
+                data: base64Audio,
+              },
+            },
+            {
+              text: `Transcribe the audio exactly. If the user said something close to "${targetPhrase}", just return that exact phrase. Otherwise, return the actual transcription.`,
+            },
+          ],
+        },
+      });
+
+      const text = result.text?.trim() || '';
+      setTranscript(text);
+
+      // 3. Send to Backend for Verification & Logging
+      const response = await fetch('/api/auth/verify-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          transcript: text, 
+          targetPhrase,
+          audioData: base64Audio // Optional: for backend audit
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.verified) {
+        onVerified();
+      } else {
+        setError(data.message || "Voice verification failed. Please try again.");
+      }
+    } catch (err: any) {
+      setError("Verification failed: " + (err.message || "Unknown error"));
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -208,10 +239,12 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
     <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-slate-700">Voice Captcha</p>
-        {isRecording && (
+        {(isRecording || isProcessing) && (
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-            <span className="text-[10px] uppercase tracking-wider font-bold text-red-500">Live</span>
+            <span className={cn("w-2 h-2 rounded-full", isRecording ? "bg-red-500 animate-ping" : "bg-blue-500 animate-pulse")} />
+            <span className={cn("text-[10px] uppercase tracking-wider font-bold", isRecording ? "text-red-500" : "text-blue-500")}>
+              {isRecording ? "Live" : "Processing"}
+            </span>
           </div>
         )}
       </div>
@@ -221,15 +254,20 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         <button
           type="button"
           onClick={isRecording ? stopRecording : startRecording}
+          disabled={isProcessing}
           className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm",
+            "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50",
             isRecording 
               ? "bg-red-100 text-red-600 hover:bg-red-200" 
               : "bg-blue-600 text-white hover:bg-blue-700"
           )}
         >
-          <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
-          {isRecording ? "Stop Recording" : "Start Voice Verification"}
+          {isProcessing ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
+          )}
+          {isProcessing ? "Verifying..." : isRecording ? "Stop Recording" : "Start Voice Verification"}
         </button>
       </div>
       {transcript && (
