@@ -7,6 +7,7 @@ import twilio from "twilio";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 import fs from "fs";
 
 dotenv.config();
@@ -22,7 +23,7 @@ admin.initializeApp({
   projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId,
 });
 
-const db = admin.firestore(process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
