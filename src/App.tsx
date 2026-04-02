@@ -24,6 +24,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
+import firebaseConfig from '../firebase-applet-config.json';
 import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock, Volume2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -89,6 +90,23 @@ const PasswordStrengthIndicator = ({ password }: { password: string }) => {
   );
 };
 
+const isAbortError = (err: any) => {
+  if (!err) return false;
+  const message = (err.message || String(err)).toLowerCase();
+  const name = (err.name || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    message.includes('aborted') ||
+    message.includes('failed to fetch') ||
+    message.includes('signal is aborted') ||
+    message.includes('network error') ||
+    message.includes('request was cancelled') ||
+    name === 'aborterror' ||
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request'
+  );
+};
+
 const logSecurityEvent = async (uid: string, type: SecurityLog['type'], details: string, status: SecurityLog['status']) => {
   try {
     await addDoc(collection(db, `users/${uid}/securityLogs`), {
@@ -101,17 +119,6 @@ const logSecurityEvent = async (uid: string, type: SecurityLog['type'], details:
     if (isAbortError(err)) return;
     console.error("Failed to log security event:", err);
   }
-};
-
-const isAbortError = (err: any) => {
-  const message = err.message?.toLowerCase() || '';
-  return (
-    message.includes('aborted') ||
-    message.includes('failed to fetch') ||
-    message.includes('signal is aborted') ||
-    err.name === 'AbortError' ||
-    err.code === 'auth/popup-closed-by-user'
-  );
 };
 
 // --- Components ---
@@ -157,6 +164,7 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         }
       }, 5000);
     } catch (err) {
+      if (isAbortError(err)) return;
       setError("Microphone access denied or not available.");
       console.error(err);
     }
@@ -228,6 +236,7 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         setError(data.message || "Voice verification failed. Please try again.");
       }
     } catch (err: any) {
+      if (isAbortError(err)) return;
       setError("Verification failed: " + (err.message || "Unknown error"));
       console.error(err);
     } finally {
@@ -531,6 +540,7 @@ export default function App() {
   const [isForcedRotation, setIsForcedRotation] = useState(false);
   const [needsExpirationAlert, setNeedsExpirationAlert] = useState(false);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+  const [isFormVoiceVerified, setIsFormVoiceVerified] = useState(false);
 
   // Form States
   const [email, setEmail] = useState('');
@@ -545,21 +555,26 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (profileDoc.exists()) {
-          const data = profileDoc.data() as UserProfile;
-          setProfile(data);
-          checkSecurityLayers(data);
-          
-          // Check if 2FA done in this session
-          const is2FADone = sessionStorage.getItem(`2fa_done_${firebaseUser.uid}`);
-          if (!is2FADone) {
-            setNeeds2FA(true);
+        try {
+          const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (profileDoc.exists()) {
+            const data = profileDoc.data() as UserProfile;
+            setProfile(data);
+            checkSecurityLayers(data);
+            
+            // Check if 2FA done in this session
+            const is2FADone = sessionStorage.getItem(`2fa_done_${firebaseUser.uid}`);
+            if (!is2FADone) {
+              setNeeds2FA(true);
+            }
+            
+            setNeedsProfileSetup(false);
+          } else {
+            setNeedsProfileSetup(true);
           }
-          
-          setNeedsProfileSetup(false);
-        } else {
-          setNeedsProfileSetup(true);
+        } catch (err) {
+          if (isAbortError(err)) return;
+          console.error("Failed to fetch user profile:", err);
         }
       } else {
         setProfile(null);
@@ -702,6 +717,7 @@ export default function App() {
             body: JSON.stringify({ email, success: false })
           });
         } catch (logErr) {
+          if (isAbortError(logErr)) return;
           console.error("Could not update lockout status:", logErr);
         }
       }
@@ -811,13 +827,19 @@ export default function App() {
 
           <div className="flex bg-slate-100 p-1 rounded-lg">
             <button 
-              onClick={() => setIsSignUp(false)}
+              onClick={() => {
+                setIsSignUp(false);
+                setIsFormVoiceVerified(false);
+              }}
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", !isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Login
             </button>
             <button 
-              onClick={() => setIsSignUp(true)}
+              onClick={() => {
+                setIsSignUp(true);
+                setIsFormVoiceVerified(false);
+              }}
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Sign Up
@@ -883,10 +905,34 @@ export default function App() {
               </>
             )}
             
-            {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
+            <div className="pt-2">
+              <VoiceCaptcha onVerified={() => setIsFormVoiceVerified(true)} />
+            </div>
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-xl space-y-2">
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  <p className="text-xs font-bold">Action Required</p>
+                </div>
+                <p className="text-xs text-red-500 leading-relaxed">{error}</p>
+                {error.includes("Sign-in providers are not enabled") && (
+                  <div className="pt-2 border-t border-red-100 mt-2 space-y-1">
+                    <p className="text-[10px] font-bold text-red-400 uppercase tracking-wider">How to Fix:</p>
+                    <ol className="text-[10px] text-red-500 list-decimal pl-4 space-y-1 text-left">
+                      <li>Go to <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`} target="_blank" className="underline font-bold">Firebase Console</a></li>
+                      <li>Click <b>"Add new provider"</b></li>
+                      <li>Enable <b>"Email/Password"</b> and <b>"Google"</b></li>
+                      <li>Save and refresh this page</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
             <button 
               type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+              disabled={!isFormVoiceVerified}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSignUp ? "Create Account" : "Sign In"}
             </button>
@@ -939,10 +985,16 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
+            
+            <div className="pt-2">
+              <VoiceCaptcha onVerified={() => setIsFormVoiceVerified(true)} />
+            </div>
+
             {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
             <button 
               type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+              disabled={!isFormVoiceVerified}
+              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Complete Setup
             </button>
