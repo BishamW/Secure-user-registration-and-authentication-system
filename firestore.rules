@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // User Profile Rules
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'fullName', 'email', 'isVerified']) &&
+               data.uid == userId &&
+               data.fullName is string && data.fullName.size() > 0 && data.fullName.size() < 100 &&
+               isValidEmail(data.email) &&
+               data.isVerified is bool &&
+               (!('phone' in data) || (data.phone is string && data.phone.size() < 20)) &&
+               (!('country' in data) || (data.country is string && data.country.size() < 50)) &&
+               (!('passwordChangedAt' in data) || isValidDateString(data.passwordChangedAt)) &&
+               (!('lastPinVerifiedAt' in data) || isValidDateString(data.lastPinVerifiedAt)) &&
+               (!('pinHash' in data) || (data.pinHash is string && data.pinHash.size() < 100));
+      }
+
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) &&
+                      request.resource.data.uid == resource.data.uid &&
+                      request.resource.data.email == resource.data.email;
+
+      // Password History Rules
+      match /passwordHistory/{historyId} {
+        function isValidHistory(data) {
+          return data.keys().hasAll(['uid', 'passwordHash', 'createdAt']) &&
+                 data.uid == userId &&
+                 data.passwordHash is string && data.passwordHash.size() > 0 &&
+                 isValidDateString(data.createdAt);
+        }
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidHistory(request.resource.data);
+        allow update, delete: if false; // History is immutable
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "SecureGuard Awareness Hub",
+  "description": "A high-security web application for online security awareness, featuring voice captcha, daily PIN verification, and strict password policies.",
+  "requestFramePermissions": ["microphone"]
+}

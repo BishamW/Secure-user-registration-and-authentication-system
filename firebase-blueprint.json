@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile and security settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "country": { "type": "string" },
+        "isVerified": { "type": "boolean" },
+        "passwordChangedAt": { "type": "string", "format": "date-time" },
+        "lastPinVerifiedAt": { "type": "string", "format": "date-time" },
+        "pinHash": { "type": "string" }
+      },
+      "required": ["uid", "fullName", "email", "isVerified"]
+    },
+    "PasswordHistory": {
+      "title": "Password History",
+      "description": "Tracks previous password hashes for the 1-year look-back rule.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "passwordHash", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile data."
+    },
+    "/users/{userId}/passwordHistory/{historyId}": {
+      "schema": "PasswordHistory",
+      "description": "User's password history."
+    }
+  }
+}
