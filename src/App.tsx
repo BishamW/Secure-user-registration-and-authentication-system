@@ -24,7 +24,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
-import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X } from 'lucide-react';
+import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 
@@ -39,6 +39,15 @@ interface UserProfile {
   passwordChangedAt: string;
   lastPinVerifiedAt: string;
   pinHash: string;
+}
+
+interface SecurityLog {
+  id?: string;
+  type: 'login' | 'failed_login' | 'password_change' | '2fa_success' | '2fa_failure' | 'signup';
+  details: string;
+  status: 'success' | 'failure';
+  timestamp: string;
+  ip?: string; // Optional for simulation
 }
 
 // --- Helper Functions ---
@@ -74,6 +83,31 @@ const PasswordStrengthIndicator = ({ password }: { password: string }) => {
         />
       </div>
     </div>
+  );
+};
+
+const logSecurityEvent = async (uid: string, type: SecurityLog['type'], details: string, status: SecurityLog['status']) => {
+  try {
+    await addDoc(collection(db, `users/${uid}/securityLogs`), {
+      type,
+      details,
+      status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    if (isAbortError(err)) return;
+    console.error("Failed to log security event:", err);
+  }
+};
+
+const isAbortError = (err: any) => {
+  const message = err.message?.toLowerCase() || '';
+  return (
+    message.includes('aborted') ||
+    message.includes('failed to fetch') ||
+    message.includes('signal is aborted') ||
+    err.name === 'AbortError' ||
+    err.code === 'auth/popup-closed-by-user'
   );
 };
 
@@ -236,15 +270,18 @@ const TwoFactorAuth = ({ onVerified, profile, needsPin }: { onVerified: () => vo
         });
         const data = await response.json();
         if (data.isValid) {
+          await logSecurityEvent(profile.uid, '2fa_success', 'Successful PIN and Voice verification', 'success');
           onVerified();
         } else {
           setError("Invalid PIN. Please try again.");
+          logSecurityEvent(profile.uid, '2fa_failure', 'User entered incorrect PIN during 2FA', 'failure');
         }
       } catch (err: any) {
-        if (err.message?.includes('aborted')) return;
+        if (isAbortError(err)) return;
         setError("Verification failed. Please try again.");
       }
     } else {
+      await logSecurityEvent(profile.uid, '2fa_success', 'Successful Voice verification', 'success');
       onVerified();
     }
   };
@@ -377,9 +414,11 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
         passwordChangedAt: new Date().toISOString()
       });
 
+      await logSecurityEvent(user.uid, 'password_change', 'User updated password', 'success');
+
       onUpdated();
     } catch (err: any) {
-      if (err.message?.includes('aborted')) return;
+      if (isAbortError(err)) return;
       setError(err.message);
     }
   };
@@ -557,6 +596,8 @@ export default function App() {
 
       await setDoc(doc(db, 'users', newUser.uid), newProfile);
       
+      await logSecurityEvent(newUser.uid, 'signup', 'User created account', 'success');
+      
       // Save initial password to history
       await addDoc(collection(db, `users/${newUser.uid}/passwordHistory`), {
         uid: newUser.uid,
@@ -567,7 +608,7 @@ export default function App() {
       setProfile(newProfile);
       setError("Verification email sent! Please verify to access dashboard.");
     } catch (err: any) {
-      if (err.message?.includes('aborted')) return;
+      if (isAbortError(err)) return;
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -579,11 +620,12 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { user: loggedInUser } = await signInWithEmailAndPassword(auth, email, password);
+      await logSecurityEvent(loggedInUser.uid, 'login', 'User logged in with email/password', 'success');
     } catch (err: any) {
-      if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
-        return; // Ignore user-initiated aborts
-      }
+      if (isAbortError(err)) return;
+      // We don't have a UID here if login fails, but we can log it if we find the user by email later
+      // For now, just show error
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -594,11 +636,10 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { user: googleUser } = await signInWithPopup(auth, googleProvider);
+      await logSecurityEvent(googleUser.uid, 'login', 'User logged in with Google', 'success');
     } catch (err: any) {
-      if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
-        return; // Ignore user-initiated aborts
-      }
+      if (isAbortError(err)) return;
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -639,7 +680,7 @@ export default function App() {
       setProfile(newProfile);
       setNeedsProfileSetup(false);
     } catch (err: any) {
-      if (err.message?.includes('aborted')) return;
+      if (isAbortError(err)) return;
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -656,7 +697,7 @@ export default function App() {
       });
       setNeedsPin(false);
     } catch (err: any) {
-      if (err.message?.includes('aborted')) return;
+      if (isAbortError(err)) return;
       console.error("Failed to update PIN verification time:", err);
     }
   };
@@ -664,6 +705,7 @@ export default function App() {
   const handle2FAComplete = () => {
     if (user) {
       sessionStorage.setItem(`2fa_done_${user.uid}`, 'true');
+      logSecurityEvent(user.uid, '2fa_success', 'User completed 2FA verification', 'success');
     }
     setNeeds2FA(false);
     if (needsPin) handlePinVerified();
@@ -1144,6 +1186,84 @@ const SecurityQuiz = () => {
   );
 };
 
+const SecurityAuditLog = ({ uid }: { uid: string }) => {
+  const [logs, setLogs] = useState<SecurityLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const q = query(
+          collection(db, `users/${uid}/securityLogs`),
+          orderBy('timestamp', 'desc'),
+          limit(10)
+        );
+        const snapshot = await getDocs(q);
+        const logData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SecurityLog));
+        setLogs(logData);
+      } catch (err) {
+        if (isAbortError(err)) return;
+        console.error("Failed to fetch security logs:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, [uid]);
+
+  const getIcon = (type: SecurityLog['type']) => {
+    switch (type) {
+      case 'login': return <LogOut className="w-4 h-4 text-green-500 rotate-180" />;
+      case 'failed_login': return <AlertTriangle className="w-4 h-4 text-red-500" />;
+      case 'password_change': return <RefreshCw className="w-4 h-4 text-blue-500" />;
+      case '2fa_success': return <Shield className="w-4 h-4 text-green-500" />;
+      case '2fa_failure': return <Shield className="w-4 h-4 text-red-500" />;
+      case 'signup': return <UserIcon className="w-4 h-4 text-purple-500" />;
+      default: return <Activity className="w-4 h-4 text-slate-500" />;
+    }
+  };
+
+  return (
+    <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+      <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+        <Activity className="w-5 h-5 text-blue-600" />
+        Security Audit Log
+      </h3>
+      {loading ? (
+        <div className="text-center py-4 text-slate-400 text-sm italic">Loading logs...</div>
+      ) : logs.length === 0 ? (
+        <div className="text-center py-4 text-slate-400 text-sm italic">No security events recorded yet.</div>
+      ) : (
+        <div className="space-y-3">
+          {logs.map((log) => (
+            <div key={log.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
+                  {getIcon(log.type)}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-900 capitalize">{log.type.replace('_', ' ')}</p>
+                  <p className="text-xs text-slate-500">{log.details}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-mono text-slate-400">{new Date(log.timestamp).toLocaleString()}</p>
+                <span className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                  log.status === 'success' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                )}>
+                  {log.status}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+};
+
 // --- Dashboard ---
 
 const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAlert }: { 
@@ -1220,6 +1340,9 @@ const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAl
           <div className="md:col-span-2 space-y-6">
             {/* Awareness Quiz */}
             <SecurityQuiz />
+
+            {/* Audit Log */}
+            {profile && <SecurityAuditLog uid={profile.uid} />}
 
             {/* Daily Tips */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">

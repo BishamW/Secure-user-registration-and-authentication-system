@@ -48,6 +48,20 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidHistory(request.resource.data);
         allow update, delete: if false; // History is immutable
       }
+
+      // Security Logs Rules
+      match /securityLogs/{logId} {
+        function isValidLog(data) {
+          return data.keys().hasAll(['type', 'details', 'status', 'timestamp']) &&
+                 data.type in ['login', 'failed_login', 'password_change', '2fa_success', '2fa_failure', 'signup'] &&
+                 data.details is string && data.details.size() > 0 && data.details.size() < 500 &&
+                 data.status in ['success', 'failure'] &&
+                 isValidDateString(data.timestamp);
+        }
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidLog(request.resource.data);
+        allow update, delete: if false; // Logs are immutable
+      }
     }
   }
 }
