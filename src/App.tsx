@@ -270,7 +270,6 @@ const TwoFactorAuth = ({ onVerified, profile, needsPin }: { onVerified: () => vo
         });
         const data = await response.json();
         if (data.isValid) {
-          await logSecurityEvent(profile.uid, '2fa_success', 'Successful PIN and Voice verification', 'success');
           onVerified();
         } else {
           setError("Invalid PIN. Please try again.");
@@ -281,7 +280,6 @@ const TwoFactorAuth = ({ onVerified, profile, needsPin }: { onVerified: () => vo
         setError("Verification failed. Please try again.");
       }
     } else {
-      await logSecurityEvent(profile.uid, '2fa_success', 'Successful Voice verification', 'success');
       onVerified();
     }
   };
@@ -349,8 +347,9 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
       setError("Passwords do not match.");
       return;
     }
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const strength = getPasswordStrength(newPassword);
+    if (strength.score < 4) {
+      setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
       return;
     }
 
@@ -558,6 +557,11 @@ export default function App() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    const strength = getPasswordStrength(password);
+    if (strength.score < 4) {
+      setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
+      return;
+    }
     if (pin.length !== 6) {
       setError("PIN must be 6 digits.");
       return;
@@ -787,7 +791,19 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-            {isSignUp && <PasswordStrengthIndicator password={password} />}
+            {isSignUp && (
+              <>
+                <PasswordStrengthIndicator password={password} />
+                <div className="relative">
+                  <Key className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+                  <input 
+                    type="password" placeholder="Set 6-digit Security PIN" required maxLength={6}
+                    value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </>
+            )}
             
             {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
             <button 
