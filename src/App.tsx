@@ -24,17 +24,11 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from './firebase';
-<<<<<<< HEAD
-import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from './lib/utils';
-=======
 import firebaseConfig from '../firebase-applet-config.json';
 import { Shield, Lock, User as UserIcon, Mail, Phone, Globe, Mic, CheckCircle, AlertTriangle, Key, RefreshCw, LogOut, X, Activity, Clock, Volume2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 
 // --- Types ---
 interface UserProfile {
@@ -47,8 +41,6 @@ interface UserProfile {
   passwordChangedAt: string;
   lastPinVerifiedAt: string;
   pinHash: string;
-<<<<<<< HEAD
-=======
   failedLoginAttempts: number;
   lockoutUntil: string | null;
 }
@@ -60,7 +52,6 @@ interface SecurityLog {
   status: 'success' | 'failure';
   timestamp: string;
   ip?: string; // Optional for simulation
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 }
 
 // --- Helper Functions ---
@@ -99,8 +90,6 @@ const PasswordStrengthIndicator = ({ password }: { password: string }) => {
   );
 };
 
-<<<<<<< HEAD
-=======
 const isAbortError = (err: any) => {
   if (!err) return false;
   const message = (err.message || String(err)).toLowerCase();
@@ -132,97 +121,12 @@ const logSecurityEvent = async (uid: string, type: SecurityLog['type'], details:
   }
 };
 
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 // --- Components ---
 
 const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
-<<<<<<< HEAD
-  const recognitionRef = useRef<any>(null);
-  const targetPhrase = "Hi this is to verify that I am not a robot";
-
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-    };
-  }, []);
-
-  const startRecording = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError("Speech recognition not supported in this browser.");
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = 'en-US';
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsRecording(true);
-      setError('');
-      setTranscript('');
-      
-      // Auto-stop after 10 seconds
-      setTimeout(() => {
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
-        }
-      }, 10000);
-    };
-    
-    recognition.onend = () => {
-      setIsRecording(false);
-    };
-
-    recognition.onerror = (event: any) => {
-      if (event.error === 'aborted') {
-        setIsRecording(false);
-        return; // Ignore intentional aborts
-      }
-      if (event.error === 'no-speech') {
-        setError("No speech detected. Please try again.");
-      } else if (event.error === 'audio-capture') {
-        setError("Microphone not found or access denied.");
-      } else if (event.error === 'not-allowed') {
-        setError("Microphone permission denied.");
-      } else {
-        setError("Error: " + event.error);
-      }
-      setIsRecording(false);
-    };
-    
-    recognition.onresult = (event: any) => {
-      const result = event.results[0][0].transcript.toLowerCase();
-      const confidence = event.results[0][0].confidence;
-      const isFinal = event.results[0].isFinal;
-      
-      setTranscript(result);
-      
-      if (isFinal) {
-        if (result.includes("verify") && result.includes("not") && result.includes("robot")) {
-          onVerified();
-        } else if (confidence < 0.5) {
-          setError("Speech not clear enough. Please try again.");
-        } else {
-          setError(`Transcription: "${result}". Please say the phrase exactly.`);
-        }
-      }
-    };
-
-    recognition.start();
-  };
-
-  const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-=======
   const [isProcessing, setIsProcessing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -324,6 +228,19 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Server error response:", errorText);
+        throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response:", text);
+        throw new Error("Server returned non-JSON response. Please check server logs.");
+      }
+
       const data = await response.json();
 
       if (data.verified) {
@@ -337,7 +254,6 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
       console.error(err);
     } finally {
       setIsProcessing(false);
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     }
   };
 
@@ -345,19 +261,12 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
     <div className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-slate-700">Voice Captcha</p>
-<<<<<<< HEAD
-        {isRecording && (
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-            <span className="text-[10px] uppercase tracking-wider font-bold text-red-500">Live</span>
-=======
         {(isRecording || isProcessing) && (
           <div className="flex items-center gap-1.5">
             <span className={cn("w-2 h-2 rounded-full", isRecording ? "bg-red-500 animate-ping" : "bg-blue-500 animate-pulse")} />
             <span className={cn("text-[10px] uppercase tracking-wider font-bold", isRecording ? "text-red-500" : "text-blue-500")}>
               {isRecording ? "Live" : "Processing"}
             </span>
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
           </div>
         )}
       </div>
@@ -367,30 +276,20 @@ const VoiceCaptcha = ({ onVerified }: { onVerified: () => void }) => {
         <button
           type="button"
           onClick={isRecording ? stopRecording : startRecording}
-<<<<<<< HEAD
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm",
-=======
           disabled={isProcessing}
           className={cn(
             "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50",
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             isRecording 
               ? "bg-red-100 text-red-600 hover:bg-red-200" 
               : "bg-blue-600 text-white hover:bg-blue-700"
           )}
         >
-<<<<<<< HEAD
-          <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
-          {isRecording ? "Stop Recording" : "Start Voice Verification"}
-=======
           {isProcessing ? (
             <RefreshCw className="w-4 h-4 animate-spin" />
           ) : (
             <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
           )}
           {isProcessing ? "Verifying..." : isRecording ? "Stop Recording" : "Start Voice Verification"}
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         </button>
       </div>
       {transcript && (
@@ -436,16 +335,10 @@ const TwoFactorAuth = ({ onVerified, profile, needsPin }: { onVerified: () => vo
           onVerified();
         } else {
           setError("Invalid PIN. Please try again.");
-<<<<<<< HEAD
-        }
-      } catch (err: any) {
-        if (err.message?.includes('aborted')) return;
-=======
           logSecurityEvent(profile.uid, '2fa_failure', 'User entered incorrect PIN during 2FA', 'failure');
         }
       } catch (err: any) {
         if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         setError("Verification failed. Please try again.");
       }
     } else {
@@ -516,14 +409,9 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
       setError("Passwords do not match.");
       return;
     }
-<<<<<<< HEAD
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
-=======
     const strength = getPasswordStrength(newPassword);
     if (strength.score < 4) {
       setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       return;
     }
 
@@ -587,17 +475,11 @@ const PasswordRotation = ({ onUpdated, isForced, onCancel }: { onUpdated: () => 
         passwordChangedAt: new Date().toISOString()
       });
 
-<<<<<<< HEAD
-      onUpdated();
-    } catch (err: any) {
-      if (err.message?.includes('aborted')) return;
-=======
       await logSecurityEvent(user.uid, 'password_change', 'User updated password', 'success');
 
       onUpdated();
     } catch (err: any) {
       if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       setError(err.message);
     }
   };
@@ -671,10 +553,7 @@ export default function App() {
   const [isForcedRotation, setIsForcedRotation] = useState(false);
   const [needsExpirationAlert, setNeedsExpirationAlert] = useState(false);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
-<<<<<<< HEAD
-=======
   const [isFormVoiceVerified, setIsFormVoiceVerified] = useState(false);
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 
   // Form States
   const [email, setEmail] = useState('');
@@ -689,23 +568,6 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-<<<<<<< HEAD
-        const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (profileDoc.exists()) {
-          const data = profileDoc.data() as UserProfile;
-          setProfile(data);
-          checkSecurityLayers(data);
-          
-          // Check if 2FA done in this session
-          const is2FADone = sessionStorage.getItem(`2fa_done_${firebaseUser.uid}`);
-          if (!is2FADone) {
-            setNeeds2FA(true);
-          }
-          
-          setNeedsProfileSetup(false);
-        } else {
-          setNeedsProfileSetup(true);
-=======
         try {
           const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (profileDoc.exists()) {
@@ -726,7 +588,6 @@ export default function App() {
         } catch (err) {
           if (isAbortError(err)) return;
           console.error("Failed to fetch user profile:", err);
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
         }
       } else {
         setProfile(null);
@@ -764,14 +625,11 @@ export default function App() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-<<<<<<< HEAD
-=======
     const strength = getPasswordStrength(password);
     if (strength.score < 4) {
       setError("Password must be at least 8 characters and include uppercase, numbers, and special characters.");
       return;
     }
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     if (pin.length !== 6) {
       setError("PIN must be 6 digits.");
       return;
@@ -805,22 +663,18 @@ export default function App() {
         isVerified: false,
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
-<<<<<<< HEAD
-        pinHash
-=======
         pinHash,
         failedLoginAttempts: 0,
         lockoutUntil: null
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       };
 
       await setDoc(doc(db, 'users', newUser.uid), newProfile);
       
-<<<<<<< HEAD
-=======
       await logSecurityEvent(newUser.uid, 'signup', 'User created account', 'success');
       
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
+      // Send verification email
+      await sendEmailVerification(newUser);
+
       // Save initial password to history
       await addDoc(collection(db, `users/${newUser.uid}/passwordHistory`), {
         uid: newUser.uid,
@@ -829,13 +683,9 @@ export default function App() {
       });
 
       setProfile(newProfile);
-      setError("Verification email sent! Please verify to access dashboard.");
+      setError("Verification email sent! Please verify your email to access the dashboard.");
     } catch (err: any) {
-<<<<<<< HEAD
-      if (err.message?.includes('aborted')) return;
-=======
       if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -847,13 +697,6 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-<<<<<<< HEAD
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err: any) {
-      if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
-        return; // Ignore user-initiated aborts
-      }
-=======
       // 1. Check Lockout Status
       const lockoutResponse = await fetch('/api/auth/lockout-check', {
         method: 'POST',
@@ -895,7 +738,6 @@ export default function App() {
         }
       }
 
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -906,18 +748,10 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     try {
-<<<<<<< HEAD
-      await signInWithPopup(auth, googleProvider);
-    } catch (err: any) {
-      if (err.message?.includes('aborted') || err.code === 'auth/popup-closed-by-user') {
-        return; // Ignore user-initiated aborts
-      }
-=======
       const { user: googleUser } = await signInWithPopup(auth, googleProvider);
       await logSecurityEvent(googleUser.uid, 'login', 'User logged in with Google', 'success');
     } catch (err: any) {
       if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -951,24 +785,16 @@ export default function App() {
         isVerified: true, // Google users are pre-verified
         passwordChangedAt: new Date().toISOString(),
         lastPinVerifiedAt: new Date().toISOString(),
-<<<<<<< HEAD
-        pinHash
-=======
         pinHash,
         failedLoginAttempts: 0,
         lockoutUntil: null
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       };
 
       await setDoc(doc(db, 'users', user.uid), newProfile);
       setProfile(newProfile);
       setNeedsProfileSetup(false);
     } catch (err: any) {
-<<<<<<< HEAD
-      if (err.message?.includes('aborted')) return;
-=======
       if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       if (err.code === 'auth/operation-not-allowed') {
         setError("Sign-in providers are not enabled. Please enable 'Email/Password' and 'Google' in your Firebase Console (Authentication > Sign-in method).");
       } else {
@@ -985,11 +811,7 @@ export default function App() {
       });
       setNeedsPin(false);
     } catch (err: any) {
-<<<<<<< HEAD
-      if (err.message?.includes('aborted')) return;
-=======
       if (isAbortError(err)) return;
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       console.error("Failed to update PIN verification time:", err);
     }
   };
@@ -997,10 +819,7 @@ export default function App() {
   const handle2FAComplete = () => {
     if (user) {
       sessionStorage.setItem(`2fa_done_${user.uid}`, 'true');
-<<<<<<< HEAD
-=======
       logSecurityEvent(user.uid, '2fa_success', 'User completed 2FA verification', 'success');
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     }
     setNeeds2FA(false);
     if (needsPin) handlePinVerified();
@@ -1024,27 +843,19 @@ export default function App() {
 
           <div className="flex bg-slate-100 p-1 rounded-lg">
             <button 
-<<<<<<< HEAD
-              onClick={() => setIsSignUp(false)}
-=======
               onClick={() => {
                 setIsSignUp(false);
                 setIsFormVoiceVerified(false);
               }}
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", !isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Login
             </button>
             <button 
-<<<<<<< HEAD
-              onClick={() => setIsSignUp(true)}
-=======
               onClick={() => {
                 setIsSignUp(true);
                 setIsFormVoiceVerified(false);
               }}
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
               className={cn("flex-1 py-2 rounded-md text-sm font-medium transition-all", isSignUp ? "bg-white shadow-sm text-blue-600" : "text-slate-500")}
             >
               Sign Up
@@ -1096,14 +907,6 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-<<<<<<< HEAD
-            {isSignUp && <PasswordStrengthIndicator password={password} />}
-            
-            {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
-            <button 
-              type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-=======
             {isSignUp && (
               <>
                 <PasswordStrengthIndicator password={password} />
@@ -1146,7 +949,6 @@ export default function App() {
               type="submit"
               disabled={!isFormVoiceVerified}
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             >
               {isSignUp ? "Create Account" : "Sign In"}
             </button>
@@ -1199,12 +1001,6 @@ export default function App() {
                 className="w-full pl-10 p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-<<<<<<< HEAD
-            {error && <p className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{error}</p>}
-            <button 
-              type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-=======
             
             <div className="pt-2">
               <VoiceCaptcha onVerified={() => setIsFormVoiceVerified(true)} />
@@ -1215,7 +1011,6 @@ export default function App() {
               type="submit"
               disabled={!isFormVoiceVerified}
               className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             >
               Complete Setup
             </button>
@@ -1553,8 +1348,6 @@ const SecurityQuiz = () => {
   );
 };
 
-<<<<<<< HEAD
-=======
 const SecurityAuditLog = ({ uid }: { uid: string }) => {
   const [logs, setLogs] = useState<SecurityLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1633,7 +1426,6 @@ const SecurityAuditLog = ({ uid }: { uid: string }) => {
   );
 };
 
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
 // --- Dashboard ---
 
 const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAlert }: { 
@@ -1711,12 +1503,9 @@ const Dashboard = ({ profile, onManualRotation, showExpirationAlert, onDismissAl
             {/* Awareness Quiz */}
             <SecurityQuiz />
 
-<<<<<<< HEAD
-=======
             {/* Audit Log */}
             {profile && <SecurityAuditLog uid={profile.uid} />}
 
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
             {/* Daily Tips */}
             <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="text-lg font-bold mb-4 flex items-center gap-2">

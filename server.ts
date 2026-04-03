@@ -24,11 +24,13 @@ admin.initializeApp({
 });
 
 const db = getFirestore(process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId);
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -232,6 +234,7 @@ async function startServer() {
       res.status(500).json({ error: "Failed to verify voice captcha" });
     }
   });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -42,7 +42,6 @@
       },
       "required": ["type", "details", "status", "timestamp"]
     }
-    }
   },
   "firestore": {
     "/users/{userId}": {
@@ -56,7 +55,6 @@
     "/users/{userId}/securityLogs/{logId}": {
       "schema": "SecurityLog",
       "description": "User's security audit logs."
-    }
     }
   }
 }

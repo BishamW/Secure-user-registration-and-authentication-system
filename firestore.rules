@@ -18,11 +18,7 @@ service cloud.firestore {
     // User Profile Rules
     match /users/{userId} {
       function isValidUser(data) {
-<<<<<<< HEAD
-        return data.keys().hasAll(['uid', 'fullName', 'email', 'isVerified']) &&
-=======
         return data.keys().hasAll(['uid', 'fullName', 'email', 'isVerified', 'failedLoginAttempts']) &&
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
                data.uid == userId &&
                data.fullName is string && data.fullName.size() > 0 && data.fullName.size() < 100 &&
                isValidEmail(data.email) &&
@@ -31,13 +27,9 @@ service cloud.firestore {
                (!('country' in data) || (data.country is string && data.country.size() < 50)) &&
                (!('passwordChangedAt' in data) || isValidDateString(data.passwordChangedAt)) &&
                (!('lastPinVerifiedAt' in data) || isValidDateString(data.lastPinVerifiedAt)) &&
-<<<<<<< HEAD
-               (!('pinHash' in data) || (data.pinHash is string && data.pinHash.size() < 100));
-=======
                (!('pinHash' in data) || (data.pinHash is string && data.pinHash.size() < 100)) &&
                data.failedLoginAttempts is int &&
                (!('lockoutUntil' in data) || data.lockoutUntil == null || isValidDateString(data.lockoutUntil));
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
       }
 
       allow read: if isOwner(userId);
@@ -58,8 +50,6 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidHistory(request.resource.data);
         allow update, delete: if false; // History is immutable
       }
-<<<<<<< HEAD
-=======
 
       // Security Logs Rules
       match /securityLogs/{logId} {
@@ -74,7 +64,6 @@ service cloud.firestore {
         allow create: if isOwner(userId) && isValidLog(request.resource.data);
         allow update, delete: if false; // Logs are immutable
       }
->>>>>>> 9a6629463e56fcdccd83a467f87b01307330503c
     }
   }
 }
